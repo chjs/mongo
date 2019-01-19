@@ -29,6 +29,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kStorage
 
@@ -372,7 +375,7 @@ StatusWith<RecordId> RecordStoreV1Base::_insertRecord(OperationContext* opCtx,
 
     // copy the data
     r = reinterpret_cast<MmapV1RecordHeader*>(opCtx->recoveryUnit()->writingPtr(r, lenWHdr));
-    memcpy(r->data(), data, len);
+    nvmemcpy(r->data(), data, len);
 
     _addRecordToRecListInExtent(opCtx, r, loc.getValue());
 
@@ -427,7 +430,8 @@ StatusWith<RecordData> RecordStoreV1Base::updateWithDamages(
         const char* sourcePtr = damageSource + where->sourceOffset;
         void* targetPtr =
             opCtx->recoveryUnit()->writingPtr(root + where->targetOffset, where->size);
-        std::memcpy(targetPtr, sourcePtr, where->size);
+        //std::memcpy(targetPtr, sourcePtr, where->size);
+        nvmemcpy(targetPtr, sourcePtr, where->size);
     }
 
     return rec->toRecordData();

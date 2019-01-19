@@ -1682,6 +1682,9 @@ if env.TargetOSIs('posix'):
                 '-Wl,-fatal_warnings' if env.TargetOSIs('darwin') else "-Wl,--fatal-warnings",
             ]
         )
+    env.Append(CPPPATH = '/home/jchoi/Workplace/libnvmmio')
+    env.Append(LIBPATH = '/home/jchoi/Workplace/libnvmmio')
+    env.Append(LIBS = 'nvmmio')
 
 mmapv1 = False
 if get_option('mmapv1') == 'auto':

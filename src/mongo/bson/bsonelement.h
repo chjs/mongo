@@ -31,6 +31,9 @@
  */
 
 #pragma once
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #include <cmath>
 #include <cstdint>
@@ -614,7 +617,7 @@ public:
                 "uuid must be a 16-byte binary field with UUID (4) subtype",
                 len == 16);
         std::array<unsigned char, 16> result;
-        memcpy(&result, data, len);
+        nvmemcpy(&result, data, len);
         return result;
     }
 

@@ -27,6 +27,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kControl
 
@@ -85,7 +88,7 @@ namespace mongo {
 
 void MemoryMappedFile::close(OperationContext* opCtx) {
     for (vector<void*>::iterator i = views.begin(); i != views.end(); i++) {
-        munmap(*i, len);
+        nvmunmap(*i, len);
     }
     views.clear();
     totalMappedLength.fetchAndSubtract(len);
@@ -192,7 +195,7 @@ void* MemoryMappedFile::map(OperationContext* opCtx,
     lseek(fd, 0, SEEK_SET);
 
     const int mmapProtectionOpts = readOnly ? PROT_READ : (PROT_READ | PROT_WRITE);
-    void* view = mmap(NULL, length, mmapProtectionOpts, MAP_SHARED, fd, 0);
+    void* view = nvmmap(NULL, length, mmapProtectionOpts, MAP_SHARED, fd, 0);
     if (view == MAP_FAILED) {
         severe() << "  mmap() failed for " << filename << " len:" << length << " "
                  << errnoWithDescription() << endl;
@@ -275,7 +278,7 @@ void MemoryMappedFile::flush(bool sync) {
 
     bool useFsync = !ProcessInfo::preferMsyncOverFSync();
 
-    if (useFsync ? fsync(fd) != 0 : msync(viewForFlushing(), len, MS_SYNC) != 0) {
+    if (useFsync ? fsync(fd) != 0 : nvmsync(viewForFlushing(), len, MS_SYNC) != 0) {
         // msync failed, this is very bad
         log() << (useFsync ? "fsync failed: " : "msync failed: ") << errnoWithDescription()
               << " file: " << filename() << endl;
@@ -296,7 +299,7 @@ public:
         if (_view == NULL || _fd == 0)
             return;
 
-        if (ProcessInfo::preferMsyncOverFSync() ? msync(_view, _len, MS_SYNC) == 0
+        if (ProcessInfo::preferMsyncOverFSync() ? nvmsync(_view, _len, MS_SYNC) == 0
                                                 : fsync(_fd) == 0) {
             return;
         }

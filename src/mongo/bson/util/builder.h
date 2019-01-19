@@ -31,6 +31,9 @@
  */
 
 #pragma once
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #include <cfloat>
 #include <cinttypes>
@@ -262,7 +265,7 @@ public:
 
     void appendBuf(const void* src, size_t len) {
         if (len)
-            memcpy(grow((int)len), src, len);
+            nvmemcpy(grow((int)len), src, len);
     }
 
     template <class T>

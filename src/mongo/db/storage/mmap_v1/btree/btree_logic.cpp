@@ -27,6 +27,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kIndex
 
@@ -418,7 +421,7 @@ bool BtreeLogic<BtreeLayout>::pushBack(BucketType* bucket,
     kn.setKeyDataOfs((short)_alloc(bucket, key.dataSize()));
     short ofs = kn.keyDataOfs();
     char* p = dataAt(bucket, ofs);
-    memcpy(p, key.data(), key.dataSize());
+    nvmemcpy(p, key.data(), key.dataSize());
     return true;
 }
 
@@ -481,7 +484,7 @@ bool BtreeLogic<BtreeLayout>::basicInsert(OperationContext* opCtx,
     kn.setKeyDataOfs((short)_alloc(bucket, key.dataSize()));
     char* p = dataAt(bucket, kn.keyDataOfs());
     opCtx->recoveryUnit()->writingPtr(p, key.dataSize());
-    memcpy(p, key.data(), key.dataSize());
+    nvmemcpy(p, key.data(), key.dataSize());
     return true;
 }
 
@@ -563,7 +566,7 @@ void BtreeLogic<BtreeLayout>::_packReadyForMod(BucketType* bucket, int& refPos) 
         int sz = getFullKey(bucket, i).data.dataSize();
         ofs -= sz;
         bucket->topSize += sz;
-        memcpy(temp + ofs, dataAt(bucket, ofsold), sz);
+        nvmemcpy(temp + ofs, dataAt(bucket, ofsold), sz);
         getKeyHeader(bucket, i).setKeyDataOfsSavingUse(ofs);
         ++i;
     }
@@ -574,7 +577,7 @@ void BtreeLogic<BtreeLayout>::_packReadyForMod(BucketType* bucket, int& refPos) 
 
     bucket->n = i;
     int dataUsed = tdz - ofs;
-    memcpy(bucket->data + ofs, temp + ofs, dataUsed);
+    nvmemcpy(bucket->data + ofs, temp + ofs, dataUsed);
 
     bucket->emptySize = tdz - dataUsed - bucket->n * sizeof(KeyHeaderType);
     int foo = bucket->emptySize;

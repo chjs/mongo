@@ -31,6 +31,9 @@
  */
 
 #pragma once
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #include <algorithm>  // for min
 #include <cstring>
@@ -266,7 +269,7 @@ inline bool StringData::equalCaseInsensitive(StringData other) const {
 
 inline void StringData::copyTo(char* dest, bool includeEndingNull) const {
     if (_data)
-        memcpy(dest, _data, size());
+        nvmemcpy(dest, _data, size());
     if (includeEndingNull)
         dest[size()] = 0;
 }

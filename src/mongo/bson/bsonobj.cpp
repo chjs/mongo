@@ -27,6 +27,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kDefault
 
@@ -104,7 +107,7 @@ void BSONObj::_assertInvalid() const {
 
 BSONObj BSONObj::copy() const {
     auto storage = SharedBuffer::allocate(objsize());
-    memcpy(storage.get(), objdata(), objsize());
+    nvmemcpy(storage.get(), objdata(), objsize());
     return BSONObj(std::move(storage));
 }
 

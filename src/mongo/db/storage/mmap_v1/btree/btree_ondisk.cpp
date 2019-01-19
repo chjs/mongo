@@ -27,6 +27,9 @@
  *    exception statement from all source files in the program, then also delete
  *    it in the license file.
  */
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kStorage
 
@@ -55,7 +58,7 @@ void DiskLoc56Bit::operator=(const DiskLoc& loc) {
         la = 0;
         ofs = OurNullOfs;
     }
-    memcpy(_a, &la, 3);  // endian
+    nvmemcpy(_a, &la, 3);	// endian
 }
 
 }  // namespace mongo

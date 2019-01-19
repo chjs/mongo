@@ -29,6 +29,9 @@
  */
 
 #pragma once
+extern "C" {
+#include <libnvmmio.h>
+}
 
 #include "mongo/config.h"
 
@@ -68,7 +71,8 @@ struct DataType {
 #endif
 
             if (t) {
-                std::memcpy(t, ptr, sizeof(T));
+                //std::memcpy(t, ptr, sizeof(T));
+                nvmemcpy(t, ptr, sizeof(T));
             }
 
             if (advanced) {

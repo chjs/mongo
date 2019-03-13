@@ -57,6 +57,9 @@
 #include "mongo/util/clock_source.h"
 #include "mongo/util/log.h"
 
+#include <pthread.h>
+
+pthread_rwlock_t msync_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 namespace mongo {
 
@@ -251,6 +254,7 @@ MMAPV1Engine::MMAPV1Engine(const StorageEngineLockFile* lockFile,
 
         MONGO_ASSERT_ON_EXCEPTION_WITH_MSG(clearTmpFiles(), "clear tmp files");
     }
+    printf("%s: mmap_v1_engine.cpp\n", __func__);
 }
 
 void MMAPV1Engine::finishInit() {
@@ -353,7 +357,11 @@ void MMAPV1Engine::_listDatabases(const std::string& directory, std::vector<std:
 }
 
 int MMAPV1Engine::flushAllFiles(OperationContext* opCtx, bool sync) {
-    return MongoFile::flushAll(opCtx, sync);
+    int result;
+    pthread_rwlock_wrlock(&msync_rwlock);
+    result = MongoFile::flushAll(opCtx, sync);
+    pthread_rwlock_unlock(&msync_rwlock);
+    return result;
 }
 
 Status MMAPV1Engine::beginBackup(OperationContext* opCtx) {

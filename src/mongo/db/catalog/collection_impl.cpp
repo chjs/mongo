@@ -76,6 +76,8 @@
 #include "mongo/util/fail_point_service.h"
 #include "mongo/util/log.h"
 
+extern pthread_rwlock_t msync_rwlock;
+
 namespace mongo {
 
 namespace {
@@ -351,6 +353,7 @@ Status CollectionImpl::insertDocuments(OperationContext* opCtx,
                                        OpDebug* opDebug,
                                        bool enforceQuota,
                                        bool fromMigrate) {
+    pthread_rwlock_rdlock(&msync_rwlock);
 
     MONGO_FAIL_POINT_BLOCK(failCollectionInserts, extraData) {
         const BSONObj& data = extraData.getData();
@@ -361,6 +364,7 @@ Status CollectionImpl::insertDocuments(OperationContext* opCtx,
                 << "Failpoint (failCollectionInserts) has been enabled (" << data
                 << "), so rejecting insert (first doc): " << begin->doc;
             log() << msg;
+            pthread_rwlock_unlock(&msync_rwlock);
             return {ErrorCodes::FailPointEnabled, msg};
         }
     }
@@ -370,6 +374,7 @@ Status CollectionImpl::insertDocuments(OperationContext* opCtx,
 
     for (auto it = begin; it != end; it++) {
         if (hasIdIndex && it->doc["_id"].eoo()) {
+            pthread_rwlock_unlock(&msync_rwlock);
             return Status(ErrorCodes::InternalError,
                           str::stream()
                               << "Collection::insertDocument got document without _id for ns:"
@@ -377,15 +382,20 @@ Status CollectionImpl::insertDocuments(OperationContext* opCtx,
         }
 
         auto status = checkValidation(opCtx, it->doc);
-        if (!status.isOK())
+        if (!status.isOK()) {
+            pthread_rwlock_unlock(&msync_rwlock);
             return status;
+	}
     }
 
     const SnapshotId sid = opCtx->recoveryUnit()->getSnapshotId();
 
     Status status = _insertDocuments(opCtx, begin, end, enforceQuota, opDebug);
-    if (!status.isOK())
+
+    if (!status.isOK()) {
+        pthread_rwlock_unlock(&msync_rwlock);
         return status;
+    }
     invariant(sid == opCtx->recoveryUnit()->getSnapshotId());
 
     getGlobalServiceContext()->getOpObserver()->onInserts(
@@ -411,7 +421,7 @@ Status CollectionImpl::insertDocuments(OperationContext* opCtx,
             }
         }
     }
-
+    pthread_rwlock_unlock(&msync_rwlock);
     return Status::OK();
 }
 
@@ -429,6 +439,7 @@ Status CollectionImpl::insertDocument(OperationContext* opCtx,
                                       const BSONObj& doc,
                                       const std::vector<MultiIndexBlock*>& indexBlocks,
                                       bool enforceQuota) {
+    pthread_rwlock_rdlock(&msync_rwlock);
 
     MONGO_FAIL_POINT_BLOCK(failCollectionInserts, extraData) {
         const BSONObj& data = extraData.getData();
@@ -439,14 +450,17 @@ Status CollectionImpl::insertDocument(OperationContext* opCtx,
                 << "Failpoint (failCollectionInserts) has been enabled (" << data
                 << "), so rejecting insert: " << doc;
             log() << msg;
+            pthread_rwlock_unlock(&msync_rwlock);
             return {ErrorCodes::FailPointEnabled, msg};
         }
     }
 
     {
         auto status = checkValidation(opCtx, doc);
-        if (!status.isOK())
+        if (!status.isOK()) {
+            pthread_rwlock_unlock(&msync_rwlock);
             return status;
+	}
     }
 
     dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
@@ -456,15 +470,19 @@ Status CollectionImpl::insertDocument(OperationContext* opCtx,
     StatusWith<RecordId> loc = _recordStore->insertRecord(
         opCtx, doc.objdata(), doc.objsize(), Timestamp(), _enforceQuota(enforceQuota));
 
-    if (!loc.isOK())
+    if (!loc.isOK()) {
+        pthread_rwlock_unlock(&msync_rwlock);
         return loc.getStatus();
+    }
 
     for (auto&& indexBlock : indexBlocks) {
         Status status = indexBlock->insert(doc, loc.getValue());
         if (!status.isOK()) {
+            pthread_rwlock_unlock(&msync_rwlock);
             return status;
         }
     }
+
 
     vector<InsertStatement> inserts;
     OplogSlot slot;
@@ -480,6 +498,8 @@ Status CollectionImpl::insertDocument(OperationContext* opCtx,
         opCtx, ns(), uuid(), inserts.begin(), inserts.end(), false);
 
     opCtx->recoveryUnit()->onCommit([this]() { notifyCappedWaitersIfNeeded(); });
+
+    pthread_rwlock_unlock(&msync_rwlock);
 
     return loc.getStatus();
 }
@@ -585,9 +605,12 @@ void CollectionImpl::deleteDocument(OperationContext* opCtx,
                                     bool fromMigrate,
                                     bool noWarn,
                                     Collection::StoreDeletedDoc storeDeletedDoc) {
+    pthread_rwlock_rdlock(&msync_rwlock);
+
     if (isCapped()) {
         log() << "failing remove on a capped ns " << _ns;
         uasserted(10089, "cannot remove from a capped collection");
+        pthread_rwlock_unlock(&msync_rwlock);
         return;
     }
 
@@ -614,6 +637,8 @@ void CollectionImpl::deleteDocument(OperationContext* opCtx,
 
     getGlobalServiceContext()->getOpObserver()->onDelete(
         opCtx, ns(), uuid(), stmtId, std::move(deleteState), fromMigrate, deletedDoc);
+
+    pthread_rwlock_unlock(&msync_rwlock);
 }
 
 Counter64 moveCounter;
@@ -627,6 +652,7 @@ RecordId CollectionImpl::updateDocument(OperationContext* opCtx,
                                         bool indexesAffected,
                                         OpDebug* opDebug,
                                         OplogUpdateEntryArgs* args) {
+    pthread_rwlock_rdlock(&msync_rwlock);
     {
         auto status = checkValidation(opCtx, newDoc);
         if (!status.isOK()) {
@@ -707,6 +733,7 @@ RecordId CollectionImpl::updateDocument(OperationContext* opCtx,
         opCtx, oldLocation, newDoc.objdata(), newDoc.objsize(), _enforceQuota(enforceQuota), this);
 
     if (updateStatus == ErrorCodes::NeedsDocumentMove) {
+	pthread_rwlock_unlock(&msync_rwlock);
         return uassertStatusOK(_updateDocumentWithMove(
             opCtx, oldLocation, oldDoc, newDoc, enforceQuota, opDebug, args, sid));
     }
@@ -735,6 +762,7 @@ RecordId CollectionImpl::updateDocument(OperationContext* opCtx,
 
     getGlobalServiceContext()->getOpObserver()->onUpdate(opCtx, *args);
 
+    pthread_rwlock_unlock(&msync_rwlock);
     return {oldLocation};
 }
 
@@ -746,11 +774,13 @@ StatusWith<RecordId> CollectionImpl::_updateDocumentWithMove(OperationContext* o
                                                              OpDebug* opDebug,
                                                              OplogUpdateEntryArgs* args,
                                                              const SnapshotId& sid) {
+    pthread_rwlock_rdlock(&msync_rwlock);
     // Insert new record.
     // TODO SERVER-30638, thread through actual timestamps.
     StatusWith<RecordId> newLocation = _recordStore->insertRecord(
         opCtx, newDoc.objdata(), newDoc.objsize(), Timestamp(), _enforceQuota(enforceQuota));
     if (!newLocation.isOK()) {
+        pthread_rwlock_unlock(&msync_rwlock);
         return newLocation;
     }
 
@@ -775,6 +805,7 @@ StatusWith<RecordId> CollectionImpl::_updateDocumentWithMove(OperationContext* o
     int64_t keysInserted;
     Status status = _indexCatalog.indexRecords(opCtx, bsonRecords, &keysInserted);
     if (!status.isOK()) {
+        pthread_rwlock_unlock(&msync_rwlock);
         return StatusWith<RecordId>(status);
     }
 
@@ -790,6 +821,7 @@ StatusWith<RecordId> CollectionImpl::_updateDocumentWithMove(OperationContext* o
         opDebug->keysDeleted += keysDeleted;
     }
 
+    pthread_rwlock_unlock(&msync_rwlock);
     return newLocation;
 }
 
@@ -815,6 +847,7 @@ StatusWith<RecordData> CollectionImpl::updateDocumentWithDamages(
     const char* damageSource,
     const mutablebson::DamageVector& damages,
     OplogUpdateEntryArgs* args) {
+    pthread_rwlock_rdlock(&msync_rwlock);
     dassert(opCtx->lockState()->isCollectionLockedForMode(ns().toString(), MODE_IX));
     invariant(oldRec.snapshotId() == opCtx->recoveryUnit()->getSnapshotId());
     invariant(updateWithDamagesSupported());
@@ -830,6 +863,7 @@ StatusWith<RecordData> CollectionImpl::updateDocumentWithDamages(
 
         getGlobalServiceContext()->getOpObserver()->onUpdate(opCtx, *args);
     }
+    pthread_rwlock_unlock(&msync_rwlock);
     return newRecStatus;
 }
 

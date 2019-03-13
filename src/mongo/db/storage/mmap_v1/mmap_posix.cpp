@@ -278,7 +278,7 @@ void MemoryMappedFile::flush(bool sync) {
 
     bool useFsync = !ProcessInfo::preferMsyncOverFSync();
 
-    if (useFsync ? fsync(fd) != 0 : nvmsync(viewForFlushing(), len, MS_SYNC) != 0) {
+    if (useFsync ? fsync(fd) != 0 : nvmsync(viewForFlushing(), len, MS_ASYNC) != 0) {
         // msync failed, this is very bad
         log() << (useFsync ? "fsync failed: " : "msync failed: ") << errnoWithDescription()
               << " file: " << filename() << endl;
@@ -299,7 +299,7 @@ public:
         if (_view == NULL || _fd == 0)
             return;
 
-        if (ProcessInfo::preferMsyncOverFSync() ? nvmsync(_view, _len, MS_SYNC) == 0
+        if (ProcessInfo::preferMsyncOverFSync() ? nvmsync(_view, _len, MS_ASYNC) == 0
                                                 : fsync(_fd) == 0) {
             return;
         }

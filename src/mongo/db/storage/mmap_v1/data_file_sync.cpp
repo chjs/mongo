@@ -85,6 +85,8 @@ void DataFileSync::run() {
         Date_t start = jsTime();
         StorageEngine* storageEngine = getGlobalServiceContext()->getGlobalStorageEngine();
 
+	printf("%s\n", __func__);
+
         dur::notifyPreDataFileFlush();
         int numFiles = storageEngine->flushAllFiles(opCtx.get(), true);
         dur::notifyPostDataFileFlush();
